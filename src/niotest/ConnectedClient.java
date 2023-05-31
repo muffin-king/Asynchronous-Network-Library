@@ -3,18 +3,20 @@ package niotest;
 import java.net.InetSocketAddress;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.Deque;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ConnectedClient implements Connection {
     private final int ID;
     private final SocketChannel channel;
-    private final Queue<Packet> packetQueue;
+    private final Deque<Packet> packetQueue;
     private final SelectionKey key;
     ConnectedClient(int ID, SocketChannel channel, SelectionKey key) {
         this.ID = ID;
         this.channel = channel;
-        packetQueue = new ConcurrentLinkedQueue<>();
+        packetQueue = new ConcurrentLinkedDeque<>();
         this.key = key;
     }
 
@@ -32,7 +34,7 @@ public class ConnectedClient implements Connection {
         return ID;
     }
 
-    Queue<Packet> getPacketQueue() {
+    Deque<Packet> getPacketQueue() {
         return packetQueue;
     }
 

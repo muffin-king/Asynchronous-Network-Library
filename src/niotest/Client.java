@@ -83,11 +83,19 @@ public class Client {
         } catch(IOException e) {
             throw new RuntimeException(e);
         }
-        System.out.println("Server disconnected");
     }
 
     public void send(Serializable data) {
         server.getPacketQueue().add(new Packet(data, server));
+    }
+
+    private void forceSend(Serializable data) {
+        server.getPacketQueue().addFirst(new Packet(data, server));
+    }
+
+    private void clearPacketQueue() {
+        for(Packet packet : server.getPacketQueue())
+            server.getPacketQueue().remove(packet);
     }
 
     private void resetReadBuffer() {
@@ -124,16 +132,18 @@ public class Client {
             try {
                 if(server != null) {
                     selector.select();
-                    Set<SelectionKey> keys = selector.selectedKeys();
+                    Set<SelectionKey> keySet = selector.selectedKeys();
 
-                    for (SelectionKey key : keys) {
+                    for (SelectionKey key : keySet) {
                         if(key.isReadable()) {
                             channel.read(readBuffer);
 
                             Serializable data = SerializationUtils.deserialize(readBuffer.array());
 
-                            if (data.equals(Packet.InternalPacketSignal.DISCONNECT))
+                            if (data.equals(Packet.InternalPacketSignal.DISCONNECT)) {
                                 finishServersideDisconnection();
+                                break;
+                            }
                             else
                                 firePacketListeners(server, new Packet(data, server));
 
@@ -152,6 +162,7 @@ public class Client {
                                 resetWriteBuffer();
                             }
                         }
+                        keySet.remove(key);
                     }
                 }
             } catch (IOException e) {

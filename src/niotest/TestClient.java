@@ -11,6 +11,9 @@ public class TestClient {
 
         client.connect("localhost", 8081);
         client.send("Cookie Monster");
+
+        Thread.sleep(1000);
+        client.disconnect();
     }
 
     private static class PacketPrinter implements PacketListener {

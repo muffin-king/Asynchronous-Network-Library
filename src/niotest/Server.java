@@ -155,13 +155,14 @@ public class Server {
                     if(key.isReadable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
                         ConnectedClient client = getClientByChannel(channel);
-                        channel.read(readBuffer);
+                        int byteCount = channel.read(readBuffer);
 
                         Serializable data = SerializationUtils.deserialize(readBuffer.array());
 
                         if(data.equals(Packet.InternalPacketSignal.DISCONNECT)) {
                             remove(client);
                             log(client.getAddress() + " disconnected");
+                            break;
                         } else
                             firePacketListeners(client, new Packet(data, client));
 
