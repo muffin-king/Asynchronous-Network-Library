@@ -34,4 +34,8 @@ public class ConnectedServer implements Connection {
     SelectionKey getKey() {
         return key;
     }
+
+    public String toString() {
+        return "ConnectedServer[address="+getAddress()+"]";
+    }
 }

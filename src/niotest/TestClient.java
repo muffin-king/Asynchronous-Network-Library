@@ -5,7 +5,7 @@ import niotest.listeners.PacketListener;
 
 public class TestClient {
     public static void main(String[] args) throws InterruptedException {
-        Client client = new Client(0);
+        Client client = new Client(0, System.out);
 
         client.addPacketListener(new PacketPrinter());
 

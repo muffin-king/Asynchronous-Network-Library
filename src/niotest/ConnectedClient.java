@@ -41,4 +41,8 @@ public class ConnectedClient implements Connection {
     SelectionKey getKey() {
         return key;
     }
+
+    public String toString() {
+        return "ConnectedClient[address="+getAddress()+", id="+ID+"]";
+    }
 }

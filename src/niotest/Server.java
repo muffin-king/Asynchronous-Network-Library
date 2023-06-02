@@ -1,10 +1,7 @@
 package niotest;
 
 import betterthreadpool.ThreadPool;
-import niotest.listeners.ConnectionEvent;
-import niotest.listeners.ConnectionListener;
-import niotest.listeners.PacketEvent;
-import niotest.listeners.PacketListener;
+import niotest.listeners.*;
 import org.apache.commons.lang3.SerializationUtils;
 
 import javax.swing.event.EventListenerList;
@@ -23,17 +20,30 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 public class Server {
-    private final ServerSocketChannel serverChannel;
-    private final Selector selector;
+    private ServerSocketChannel serverChannel;
+    private Selector selector;
     private final ThreadPool threadPool;
     private final Map<Integer, ConnectedClient> clients;
     private final ByteBuffer readBuffer;
     private final ByteBuffer writeBuffer;
     private static final Random RNG = new Random();
-    private PrintStream logStream;
-    private final EventListenerList events;
+    private PrintStream debugOutput;
+    private final EventListenerList listeners;
 
-    public Server(int port, PrintStream logStream, int threads) {
+    public Server(PrintStream debugOutput, int threads) {
+        clients = new ConcurrentHashMap<>();
+
+        threadPool = new ThreadPool(threads);
+
+        this.debugOutput = debugOutput;
+
+        readBuffer = ByteBuffer.allocate(1024);
+        writeBuffer = ByteBuffer.allocate(1024);
+
+        listeners = new EventListenerList();
+    }
+
+    public void open(int port) {
         try {
             serverChannel = ServerSocketChannel.open();
             serverChannel.bind(new InetSocketAddress(port));
@@ -43,21 +53,15 @@ public class Server {
             selector = Selector.open();
             serverChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-            clients = new ConcurrentHashMap<>();
-
-            threadPool = new ThreadPool(threads);
-
-            this.logStream = logStream;
-
-            readBuffer = ByteBuffer.allocate(1024);
-            writeBuffer = ByteBuffer.allocate(1024);
-
-            events = new EventListenerList();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
         threadPool.scheduleTask(new ServerTask(), 1, 0, TimeUnit.MILLISECONDS);
+    }
+
+    public void close() {
+
     }
 
     public void send(Serializable data, ConnectedClient client) {
@@ -77,21 +81,26 @@ public class Server {
     }
 
     public void addPacketListener(PacketListener listener) {
-        events.add(PacketListener.class, listener);
+        listeners.add(PacketListener.class, listener);
     }
 
     public void addConnectionListener(ConnectionListener listener) {
-        events.add(ConnectionListener.class, listener);
+        listeners.add(ConnectionListener.class, listener);
     }
 
     private void firePacketListeners(ConnectedClient client, Packet packet) {
-        for(PacketListener listener : events.getListeners(PacketListener.class))
+        for(PacketListener listener : listeners.getListeners(PacketListener.class))
             listener.onPacketReceive(new PacketEvent(client, Instant.now(), packet));
     }
 
     private void fireConnectionListeners(ConnectedClient client) {
-        for(ConnectionListener listener : events.getListeners(ConnectionListener.class))
+        for(ConnectionListener listener : listeners.getListeners(ConnectionListener.class))
             listener.onConnection(new ConnectionEvent(client, Instant.now()));
+    }
+
+    private void fireDisconnectionListener(ConnectedClient client) {
+        for(ConnectionListener listener : listeners.getListeners(ConnectionListener.class))
+            listener.onDisconnection(new DisconnectionEvent(client, Instant.now()));
     }
 
     private ConnectedClient getClientByChannel(SocketChannel channel) {
@@ -113,22 +122,26 @@ public class Server {
     }
 
     public void disconnect(ConnectedClient client) {
+        log("Disconnecting "+client);
         try {
             send(Packet.InternalPacketSignal.DISCONNECT, client);
             client.getKey().cancel();
             clients.values().remove(client);
             client.getChannel().close();
+            fireDisconnectionListener(client);
+            log(client + " was disconnected");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        log(client.getAddress() + " was disconnected");
     }
 
     private void remove(ConnectedClient client) {
+        log(client + " disconnected");
         try {
             clients.values().remove(client);
             client.getKey().cancel();
             client.getChannel().close();
+            fireDisconnectionListener(client);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -141,34 +154,32 @@ public class Server {
                 selector.select();
                 Set<SelectionKey> keySet = selector.selectedKeys();
                 for (SelectionKey key : keySet) {
-                    if(key.isAcceptable()) {
+                    if(key.isValid() && key.isAcceptable()) {
                         SocketChannel channel = serverChannel.accept();
                         channel.configureBlocking(false);
 
                         int id = RNG.nextInt();
                         clients.put(id, new ConnectedClient(id, channel,
                                 channel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE)));
-                        log("Client from "+clients.get(id).getAddress()+" connected, assigned ID "+id);
+                        log("Client from "+clients.get(id)+" connected, assigned ID "+id);
 
                         fireConnectionListeners(clients.get(id));
-                    }
-                    if(key.isReadable()) {
+                    } else if(key.isValid() && key.isReadable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
                         ConnectedClient client = getClientByChannel(channel);
                         int byteCount = channel.read(readBuffer);
 
-                        Serializable data = SerializationUtils.deserialize(readBuffer.array());
-
-                        if(data.equals(Packet.InternalPacketSignal.DISCONNECT)) {
+                        if(byteCount == -1)
                             remove(client);
-                            log(client.getAddress() + " disconnected");
-                            break;
-                        } else
-                            firePacketListeners(client, new Packet(data, client));
+                        else {
 
+                            Serializable data = SerializationUtils.deserialize(readBuffer.array());
+
+                            firePacketListeners(client, new Packet(data, client));
+                        }
                         resetReadBuffer();
                     }
-                    if(key.isWritable()) {
+                    if(key.isValid() && key.isWritable()) {
                         ConnectedClient client = getClientByChannel((SocketChannel) key.channel());
                         for (Packet packet : client.getPacketQueue()) {
                             client.getPacketQueue().remove();
@@ -187,15 +198,15 @@ public class Server {
         }
     }
 
-    public PrintStream getLogStream() {
-        return logStream;
+    public PrintStream getDebugOutput() {
+        return debugOutput;
     }
 
-    public void setLogStream(PrintStream logStream) {
-        this.logStream = logStream;
+    public void setDebugOutput(PrintStream debugOutput) {
+        this.debugOutput = debugOutput;
     }
 
     private void log(String message) {
-        logStream.println("[Server INFO] " + message);
+        debugOutput.println("[Server INFO] " + message);
     }
 }
