@@ -15,6 +15,7 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -27,6 +28,7 @@ public class Client {
     private final EventListenerList listeners;
     private PrintStream debugOutput;
     private ConnectedServer server;
+    private boolean isConnected;
 
     public Client(int port, PrintStream debugOutput) {
         this.debugOutput = debugOutput;
@@ -48,6 +50,8 @@ public class Client {
         listeners = new EventListenerList();
 
         server = null;
+
+        isConnected = false;
     }
 
     public void connect(String hostname, int port) {
@@ -61,13 +65,16 @@ public class Client {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+
+        isConnected = true;
     }
 
     public void disconnect() {
+        isConnected = false;
+
         ConnectedServer server = this.server;
         log("Disconnecting from "+server);
         try {
-            send(Packet.InternalPacketSignal.DISCONNECT);
             this.server.getKey().cancel();
             this.server = null;
             channel.close();
@@ -80,7 +87,17 @@ public class Client {
         }
     }
 
+    public InetSocketAddress getAddress() {
+        return new InetSocketAddress(channel.socket().getInetAddress().getHostName(), channel.socket().getLocalPort());
+    }
+
+    public boolean isConnected() {
+        return isConnected;
+    }
+
     private void finishServersideDisconnection() {
+        isConnected = false;
+
         ConnectedServer server = this.server;
         log("Server " + server + " disconnected");
         try {
@@ -95,12 +112,8 @@ public class Client {
         }
     }
 
-    public void send(Serializable data) {
-        server.getPacketQueue().add(new Packet(data, server));
-    }
-
-    private void forceSend(Serializable data) {
-        server.getPacketQueue().addFirst(new Packet(data, server));
+    public void send(Serializable data, int ID) {
+        server.getPacketQueue().add(new Packet(data, server, ID));
     }
 
     private void clearPacketQueue() {
@@ -157,16 +170,16 @@ public class Client {
                                 finishServersideDisconnection();
                             else {
 
-                                Serializable data = SerializationUtils.deserialize(readBuffer.array());
+                                Packet packet = SerializationUtils.deserialize(readBuffer.array());
 
-                                firePacketListeners(server, new Packet(data, server));
+                                firePacketListeners(server, packet);
                             }
                             resetReadBuffer();
                         }
                         if(key.isValid() && key.isWritable()) {
                             for (Packet packet : server.getPacketQueue()) {
                                 server.getPacketQueue().remove();
-                                writeBuffer.put(SerializationUtils.serialize(packet.getData()));
+                                writeBuffer.put(SerializationUtils.serialize(packet));
                                 writeBuffer.position(0);
                                 try {
                                     channel.write(writeBuffer);
@@ -194,6 +207,7 @@ public class Client {
     }
 
     private void log(String message) {
-        debugOutput.println("[Client INFO] " + message);
+        if(debugOutput != null)
+            debugOutput.println("[Client INFO] " + message);
     }
 }

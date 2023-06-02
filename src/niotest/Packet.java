@@ -3,15 +3,17 @@ package niotest;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 
-public class Packet {
+public class Packet implements Serializable {
     private final Serializable data;
-    private final InetSocketAddress address;
-    Packet(Serializable data, Connection connection) {
+    private transient final InetSocketAddress address;
+    private final int ID;
+    Packet(Serializable data, Connection connection, int ID) {
         this.data = data;
         if(connection != null)
             address = connection.getAddress();
         else
             address = null;
+        this.ID = ID;
     }
 
     public Serializable getData() {
@@ -22,7 +24,7 @@ public class Packet {
         return address;
     }
 
-    enum InternalPacketSignal implements Serializable {
-        DISCONNECT
+    public int getID() {
+        return ID;
     }
 }

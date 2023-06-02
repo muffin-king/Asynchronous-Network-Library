@@ -1,6 +1,7 @@
 package niotest;
 
 import betterthreadpool.ThreadPool;
+import betterthreadpool.ThreadPoolTask;
 import niotest.listeners.*;
 import org.apache.commons.lang3.SerializationUtils;
 
@@ -29,6 +30,8 @@ public class Server {
     private static final Random RNG = new Random();
     private PrintStream debugOutput;
     private final EventListenerList listeners;
+    private ThreadPoolTask serverTask;
+    private boolean isOpen;
 
     public Server(PrintStream debugOutput, int threads) {
         clients = new ConcurrentHashMap<>();
@@ -41,9 +44,16 @@ public class Server {
         writeBuffer = ByteBuffer.allocate(1024);
 
         listeners = new EventListenerList();
+
+        serverChannel = null;
+        selector = null;
+        serverTask = null;
+
+        isOpen = false;
     }
 
     public void open(int port) {
+        log("Opening server on port "+port);
         try {
             serverChannel = ServerSocketChannel.open();
             serverChannel.bind(new InetSocketAddress(port));
@@ -57,19 +67,49 @@ public class Server {
             throw new RuntimeException(e);
         }
 
-        threadPool.scheduleTask(new ServerTask(), 1, 0, TimeUnit.MILLISECONDS);
+        serverTask = threadPool.scheduleTask(new ServerTask(), 1, 0, TimeUnit.MILLISECONDS);
+
+        log("Server successfully opened on port "+port);
+
+        isOpen = true;
+    }
+
+    public boolean isOpen() {
+        return isOpen;
     }
 
     public void close() {
+        isOpen = false;
 
+        log("Closing server");
+        serverTask.cancel();
+        serverTask = null;
+
+        for(ConnectedClient client : clients.values()) {
+            disconnect(client);
+        }
+        try {
+            selector.close();
+            selector = null;
+
+            serverChannel.close();
+            serverChannel = null;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        log("Server closed");
     }
 
-    public void send(Serializable data, ConnectedClient client) {
-        client.getPacketQueue().add(new Packet(data, client));
+    public InetSocketAddress getAddress() {
+        return new InetSocketAddress(serverChannel.socket().getInetAddress().getHostName(), serverChannel.socket().getLocalPort());
     }
 
-    public void send(Serializable data, int ID) {
-        clients.get(ID).getPacketQueue().add(new Packet(data, clients.get(ID)));
+    public void send(Serializable data, ConnectedClient client, int ID) {
+        client.getPacketQueue().add(new Packet(data, client, ID));
+    }
+
+    public void send(Serializable data, int clientID, int ID) {
+        clients.get(clientID).getPacketQueue().add(new Packet(data, clients.get(clientID), ID));
     }
 
     public ConnectedClient getClientByAddress(InetSocketAddress address) {
@@ -124,7 +164,6 @@ public class Server {
     public void disconnect(ConnectedClient client) {
         log("Disconnecting "+client);
         try {
-            send(Packet.InternalPacketSignal.DISCONNECT, client);
             client.getKey().cancel();
             clients.values().remove(client);
             client.getChannel().close();
@@ -145,6 +184,10 @@ public class Server {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public ConnectedClient[] getClients() {
+        return clients.values().toArray(new ConnectedClient[0]);
     }
 
     private class ServerTask implements Runnable {
@@ -173,9 +216,9 @@ public class Server {
                             remove(client);
                         else {
 
-                            Serializable data = SerializationUtils.deserialize(readBuffer.array());
+                            Packet packet = SerializationUtils.deserialize(readBuffer.array());
 
-                            firePacketListeners(client, new Packet(data, client));
+                            firePacketListeners(client, packet);
                         }
                         resetReadBuffer();
                     }
@@ -183,7 +226,7 @@ public class Server {
                         ConnectedClient client = getClientByChannel((SocketChannel) key.channel());
                         for (Packet packet : client.getPacketQueue()) {
                             client.getPacketQueue().remove();
-                            byte[] data = SerializationUtils.serialize(packet.getData());
+                            byte[] data = SerializationUtils.serialize(packet);
                             writeBuffer.put(data);
                             writeBuffer.position(0);
                             client.getChannel().write(writeBuffer);
@@ -207,6 +250,7 @@ public class Server {
     }
 
     private void log(String message) {
-        debugOutput.println("[Server INFO] " + message);
+        if(debugOutput != null)
+            debugOutput.println("[Server INFO] " + message);
     }
 }
