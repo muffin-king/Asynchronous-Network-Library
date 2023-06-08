@@ -1,12 +1,10 @@
-package niotest;
+package asyncnetworklibrary;
 
 import java.net.InetSocketAddress;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.Deque;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ConnectedServer implements Connection {
     private final InetSocketAddress address;

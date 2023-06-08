@@ -1,7 +1,7 @@
-package niotest.listeners;
+package asyncnetworklibrary.listeners;
 
-import niotest.Connection;
-import niotest.Packet;
+import asyncnetworklibrary.Connection;
+import asyncnetworklibrary.Packet;
 
 import java.time.Instant;
 import java.util.EventObject;

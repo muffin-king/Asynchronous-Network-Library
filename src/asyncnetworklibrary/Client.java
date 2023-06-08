@@ -1,7 +1,7 @@
-package niotest;
+package asyncnetworklibrary;
 
 import betterthreadpool.ThreadPool;
-import niotest.listeners.*;
+import asyncnetworklibrary.listeners.*;
 import org.apache.commons.lang3.SerializationUtils;
 
 import javax.swing.event.EventListenerList;
@@ -15,7 +15,6 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 

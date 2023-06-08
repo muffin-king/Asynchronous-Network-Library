@@ -1,7 +1,7 @@
-package niotest;
+package asyncnetworklibrary;
 
-import niotest.listeners.PacketEvent;
-import niotest.listeners.PacketListener;
+import asyncnetworklibrary.listeners.PacketEvent;
+import asyncnetworklibrary.listeners.PacketListener;
 
 public class TestClient {
     public static void main(String[] args) throws InterruptedException {
